@@ -1,0 +1,34 @@
+v2f vert(appdata v)
+{
+	UNITY_SETUP_INSTANCE_ID(v);
+	v2f o;
+	PoiInitStruct(v2f, o);
+	UNITY_TRANSFER_INSTANCE_ID(v, o);
+	UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(o);
+
+	o.objNormal = v.normal;
+	o.normal = UnityObjectToWorldNormal(v.normal);
+	o.tangent = UnityObjectToWorldDir(v.tangent);
+	
+	o.binormal = cross(o.normal, o.tangent) * (v.tangent.w * unity_WorldTransformParams.w);
+	o.vertexColor = v.color;
+
+	o.uv[0].xy = v.uv0;
+	o.uv[0].zw = v.uv1;
+	o.uv[1].xy = v.uv2;
+	o.uv[1].zw = v.uv3;
+
+	o.localPos = v.vertex;
+	o.worldPos = mul(unity_ObjectToWorld, o.localPos);
+	o.pos = UnityObjectToClipPos(v.vertex);
+	
+	#ifndef FORWARD_META_PASS
+		#if !defined(UNITY_PASS_SHADOWCASTER)
+			UNITY_TRANSFER_SHADOW(o, o.uv[0].xy);
+		#else
+			TRANSFER_SHADOW_CASTER_NOPOS(o, o.pos);
+		#endif
+	#endif
+	UNITY_TRANSFER_FOG(o, o.pos);
+	return o;
+}

@@ -1,0 +1,33 @@
+#T#OutlinePassTags
+Tags { "LightMode" = "ForwardBase" }
+
+#T#OutlinePassBlendSettings
+ZWrite [_ZWrite]
+Cull [_Cull]
+AlphaToMask [_AlphaToMask]
+ZTest [_ZTest]
+ColorMask [_ColorMask]
+Offset [_OffsetFactor], [_OffsetUnits]
+
+BlendOp [_BlendOp], [_BlendOpAlpha]
+Blend [_SrcBlend] [_DstBlend]
+
+#T#OutlinePassOnlyKeywords
+#pragma shader_feature VERTEXLIGHT_ON
+#pragma multi_compile_fwdbase
+#pragma multi_compile_instancing
+#pragma multi_compile_fog
+
+#T#OutlinePassPropertyVariables
+#K#OUTLINE_PROPERTY_VARIABLES
+
+#T#BasePassPrograms
+#K#VERTEX_OUTLINE_DATA_STRUCTURES
+#K#VERTEX_OUTLINE_FUNCTIONS
+#K#VERTEX_OUTLINE_PROGRAM
+
+#K#FRAGMENT_OUTLINE_DATA_STRUCTURES
+#K#FRAGMENT_OUTLINE_FUNCTIONS_EARLY
+#K#FRAGMENT_OUTLINE_FUNCTIONS
+#K#FRAGMENT_OUTLINE_FUNCTIONS_LATE
+#K#FRAGMENT_OUTLINE_PROGRAM

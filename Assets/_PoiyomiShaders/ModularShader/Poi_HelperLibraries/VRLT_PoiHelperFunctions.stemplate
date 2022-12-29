@@ -1,0 +1,182 @@
+float2 poiUV(float2 uv, float4 tex_st)
+{
+    return uv * tex_st.xy + tex_st.zw;
+}
+
+//Lighting Helpers
+float calculateluminance(float3 color)
+{
+    return color.r * 0.299 + color.g * 0.587 + color.b * 0.114;
+}
+
+/*
+* MIT License
+*
+* Copyright (c) 2018 s-ilent
+*
+* Permission is hereby granted, free of charge, to any person obtaining a copy
+* of this software and associated documentation files (the "Software"), to deal
+* in the Software without restriction, including without limitation the rights
+* to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+* copies of the Software, and to permit persons to whom the Software is
+* furnished to do so, subject to the following conditions:
+*
+* The above copyright notice and this permission notice shall be included in all
+* copies or substantial portions of the Software.
+*
+* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+* IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+* FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+* AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+* LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+* OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+* SOFTWARE.
+*/
+
+float shEvaluateDiffuseL1Geomerics_local(float L0, float3 L1, float3 n)
+{
+    // average energy
+    float R0 = max(0, L0);
+    
+    // avg direction of incoming light
+    float3 R1 = 0.5f * L1;
+    
+    // directional brightness
+    float lenR1 = length(R1);
+    
+    // linear angle between normal and direction 0-1
+    //float q = 0.5f * (1.0f + dot(R1 / lenR1, n));
+    //float q = dot(R1 / lenR1, n) * 0.5 + 0.5;
+    float q = dot(normalize(R1), n) * 0.5 + 0.5;
+    q = saturate(q); // Thanks to ScruffyRuffles for the bug identity.
+    
+    // power for q
+    // lerps from 1 (linear) to 3 (cubic) based on directionality
+    float p = 1.0f + 2.0f * lenR1 / R0;
+    
+    // dynamic range constant
+    // should vary between 4 (highly directional) and 0 (ambient)
+    float a = (1.0f - lenR1 / R0) / (1.0f + lenR1 / R0);
+    
+    return R0 * (a + (1.0f - a) * (p + 1.0f) * pow(q, p));
+}
+
+half3 BetterSH9(half4 normal)
+{
+    float3 indirect;
+    float3 L0 = float3(unity_SHAr.w, unity_SHAg.w, unity_SHAb.w) + float3(unity_SHBr.z, unity_SHBg.z, unity_SHBb.z) / 3.0;
+    indirect.r = shEvaluateDiffuseL1Geomerics_local(L0.r, unity_SHAr.xyz, normal.xyz);
+    indirect.g = shEvaluateDiffuseL1Geomerics_local(L0.g, unity_SHAg.xyz, normal.xyz);
+    indirect.b = shEvaluateDiffuseL1Geomerics_local(L0.b, unity_SHAb.xyz, normal.xyz);
+    indirect = max(0, indirect);
+    indirect += SHEvalLinearL2(normal);
+    return indirect;
+}
+
+// Silent's code ends here
+
+float3 getCameraForward()
+{
+    #if UNITY_SINGLE_PASS_STEREO
+        float3 p1 = mul(unity_StereoCameraToWorld[0], float4(0, 0, 1, 1));
+        float3 p2 = mul(unity_StereoCameraToWorld[0], float4(0, 0, 0, 1));
+    #else
+        float3 p1 = mul(unity_CameraToWorld, float4(0, 0, 1, 1)).xyz;
+        float3 p2 = mul(unity_CameraToWorld, float4(0, 0, 0, 1)).xyz;
+    #endif
+    return normalize(p2 - p1);
+}
+
+half3 GetSHLength()
+{
+    half3 x, x1;
+    x.r = length(unity_SHAr);
+    x.g = length(unity_SHAg);
+    x.b = length(unity_SHAb);
+    x1.r = length(unity_SHBr);
+    x1.g = length(unity_SHBg);
+    x1.b = length(unity_SHBb);
+    return x + x1;
+}
+
+float3 BoxProjection(float3 direction, float3 position, float4 cubemapPosition, float3 boxMin, float3 boxMax)
+{
+    #if UNITY_SPECCUBE_BOX_PROJECTION
+        UNITY_BRANCH
+        if (cubemapPosition.w > 0)
+        {
+            float3 factors = ((direction > 0 ? boxMax : boxMin) - position) / direction;
+            float scalar = min(min(factors.x, factors.y), factors.z);
+            direction = direction * scalar + (position - cubemapPosition.xyz);
+        }
+    #endif
+    return direction;
+}
+
+float poiMax(float2 i)
+{
+    return max(i.x, i.y);
+}
+
+float poiMax(float3 i)
+{
+    return max(max(i.x, i.y), i.z);
+}
+
+float poiMax(float4 i)
+{
+    return max(max(max(i.x, i.y), i.z), i.w);
+}
+
+float3 hueShift(float3 color, float Offset)
+{
+    float4 K = float4(0.0, -1.0 / 3.0, 2.0 / 3.0, -1.0);
+    float4 P = lerp(float4(color.bg, K.wz), float4(color.gb, K.xy), step(color.b, color.g));
+    float4 Q = lerp(float4(P.xyw, color.r), float4(color.r, P.yzx), step(P.x, color.r));
+    float D = Q.x - min(Q.w, Q.y);
+    float E = 0.0000000001;
+    float3 hsv = float3(abs(Q.z + (Q.w - Q.y) / (6.0 * D + E)), D / (Q.x + E), Q.x);
+    
+    float hue = hsv.x + Offset;
+    hsv.x = frac(hue);
+    
+    float4 K2 = float4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
+    float3 P2 = abs(frac(hsv.xxx + K2.xyz) * 6.0 - K2.www);
+    return hsv.z * lerp(K2.xxx, saturate(P2 - K2.xxx), hsv.y);
+}
+
+
+float3 calculateNormal(in float3 baseNormal, in PoiMesh poiMesh, in Texture2D normalTexture, in float4 normal_ST, in float2 normalPan, in float normalUV, in float normalIntensity)
+{
+    float3 normal = UnpackScaleNormal(POI2D_SAMPLER_PAN(normalTexture, _MainTex, poiUV(poiMesh.uv[normalUV], normal_ST), normalPan), normalIntensity);
+    return normalize(
+        normal.x * poiMesh.tangent +
+        normal.y * poiMesh.binormal +
+        normal.z * baseNormal
+    );
+}
+
+float remap(float x, float minOld, float maxOld, float minNew = 0, float maxNew = 1)
+{
+    return minNew + (x - minOld) * (maxNew - minNew) / (maxOld - minOld);
+}
+
+float2 remap(float2 x, float2 minOld, float2 maxOld, float2 minNew = 0, float2 maxNew = 1)
+{
+    return minNew + (x - minOld) * (maxNew - minNew) / (maxOld - minOld);
+}
+
+float3 remap(float3 x, float3 minOld, float3 maxOld, float3 minNew = 0, float3 maxNew = 1)
+{
+    return minNew + (x - minOld) * (maxNew - minNew) / (maxOld - minOld);
+}
+
+float4 remap(float4 x, float4 minOld, float4 maxOld, float4 minNew = 0, float4 maxNew = 1)
+{
+    return minNew + (x - minOld) * (maxNew - minNew) / (maxOld - minOld);
+}
+
+float remapClamped(float minOld, float maxOld, float x, float minNew = 0, float maxNew = 1)
+{
+    return clamp(minNew + (x - minOld) * (maxNew - minNew) / (maxOld - minOld), 0, 1);
+}
